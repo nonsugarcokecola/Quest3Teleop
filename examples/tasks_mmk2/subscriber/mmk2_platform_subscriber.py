@@ -43,7 +43,7 @@ class SimNode(MMK2TaskBase):
         return 1
 
 
-class MMK2Subscriber(Node):
+class MMK2PlatformSubscriber(Node):
     def __init__(self, sim_node):
         super().__init__('action_subscriber')
 
@@ -53,10 +53,11 @@ class MMK2Subscriber(Node):
         self.right_arm_pre = None
         # 订阅话题
         self.mmk2_topics = [
-            "mmk2_left_end", "mmk2_right_end",  # POSE 类型
-            "mmk2_left_gripper_release", "mmk2_left_gripper_tighten",  #  Float32 类型
-            "mmk2_right_gripper_release", "mmk2_right_gripper_tighten", #  Float32 类型
+            # "mmk2_left_end", "mmk2_right_end",  # POSE 类型
+            # "mmk2_left_gripper_release", "mmk2_left_gripper_tighten",  #  Float32 类型
+            # "mmk2_right_gripper_release", "mmk2_right_gripper_tighten", #  Float32 类型
             "mmk2_platform"  #  Float32 类型,
+            # "mmk2_linear", "mmk2_angular", #  Float32 类型,
         ]
 
         # 设置定时器，每10秒检查是否接收到消息
@@ -170,6 +171,7 @@ class MMK2Subscriber(Node):
                 self.sim_node.tctr_head[1] = msg.data
                 self.get_logger().info(f"[{topic_name}] 更新 sim_node: 头部位置 z {msg.data}")
             elif "platform" in topic_name:
+                self.get_logger().info(f"***********************[{topic_name}] 更新 sim_node: 尝试更新平台位置 x {self.sim_node.tctr_slide[0]}*****************")
                 weight = None
                 if msg.data > 0:
                     weight = UP_WEIGHT
@@ -187,25 +189,28 @@ class MMK2Subscriber(Node):
                             f"[{topic_name}] tctr_slide[0] exceeded lower threshold: {self.sim_node.tctr_slide[0]}")
 
                     self.get_logger().info(f"[{topic_name}] 更新 sim_node: 平台位置 x {self.sim_node.tctr_slide[0]}")
-            elif "linear" in topic_name:
-                weight = 0
-                if msg.data > LINEAR_THRESHOLD:
-                    weight = LINEAR_VELOCITY
-                elif -LINEAR_THRESHOLD > msg.data:
-                    weight = -LINEAR_VELOCITY
-                self.sim_node.tctr_base[0] = weight
-
-                if msg.data != 0:
-                    self.get_logger().info(f"{topic_name} 更新sim_node线速度分量，摇杆分量{msg.data}")
-            elif "angular" in topic_name:
-                weight = 0
-                if msg.data > ANGULAR_THRESHOLD:
-                    weight = -ANGULAR_VELOCITY
-                elif -ANGULAR_THRESHOLD > msg.data:
-                    weight = ANGULAR_VELOCITY
-                self.sim_node.tctr_base[1] = weight
-                if msg.data != 0:
-                    self.get_logger().info(f"{topic_name} 更新sim_node角速度分量，摇杆分量{msg.data}")
+            # elif "linear" in topic_name:
+            #     # self.get_logger().info(f"********************{topic_name} 尝试更新sim_ndoe线速度分量, 分量{msg.data}*****************")
+            #     weight = 0
+            #     if msg.data > LINEAR_THRESHOLD:
+            #         weight = LINEAR_VELOCITY
+            #     elif -LINEAR_THRESHOLD > msg.data:
+            #         weight = -LINEAR_VELOCITY
+            #     self.sim_node.tctr_base[0] = weight
+            #
+            #     if msg.data != 0:
+            #         self.get_logger().info(f"{topic_name} 更新sim_node线速度分量，摇杆分量{msg.data}")
+            # elif "angular" in topic_name:
+            #     # self.get_logger().info(
+            #         # f"********************{topic_name} 尝试更新sim_ndoe角速度分量, 分量{msg.data}*****************")
+            #     weight = 0
+            #     if msg.data > ANGULAR_THRESHOLD:
+            #         weight = -ANGULAR_VELOCITY
+            #     elif -ANGULAR_THRESHOLD > msg.data:
+            #         weight = ANGULAR_VELOCITY
+            #     self.sim_node.tctr_base[1] = weight
+            #     if msg.data != 0:
+            #         self.get_logger().info(f"{topic_name} 更新sim_node角速度分量，摇杆分量{msg.data}")
             else:
                 self.get_logger().warn(f"[{topic_name}] Unknown topic: {topic_name}")
         except Exception as e:
@@ -245,7 +250,7 @@ def main(args=None):
     rclpy.init(args=args)
     sim_node = SimNode(cfg)
 
-    node = MMK2Subscriber(sim_node)
+    node = MMK2PlatformSubscriber(sim_node)
     rclpy.spin(node)
     node.destroy_node()
     rclpy.shutdown()
