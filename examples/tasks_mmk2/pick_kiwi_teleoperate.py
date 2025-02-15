@@ -17,6 +17,9 @@ from discoverse.utils import get_body_tmat, step_func, SimpleStateMachine
 from publisher.image_publisher import MultiCameraPublisher
 from subscriber.mmk2_subscriber import MMK2Subscriber
 from subscriber.mmk2_twist_subscriber import MMK2TwistSubscriber
+from subscriber.mmk2_gripper_subscriber import MMK2GripperSubscriber
+from subscriber.mmk2_arm_subscriber import MMK2ARMSubscriber
+from subscriber.mmk2_platform_subscriber import  MMK2PlatformSubscriber
 
 TABLE_WIDTH_UPPER_BOUND = 1.3
 TABLE_WIDTH_LOWER_BOUND = 0.2
@@ -172,11 +175,16 @@ if __name__ == '__main__':
     cam_publishers_node = MultiCameraPublisher()
     action_subscribers_node = MMK2Subscriber(sim_node=sim_node)
     twist_subscribers_node = MMK2TwistSubscriber(sim_node=sim_node)
+    platform_subscribers_node = MMK2PlatformSubscriber(sim_node=sim_node)
+    gripper_subscribers_node = MMK2GripperSubscriber(sim_node=sim_node)
+    arm_subscribers_node = MMK2ARMSubscriber(sim_node=sim_node)
 
     executor = MultiThreadedExecutor()
     executor.add_node(cam_publishers_node)
-    executor.add_node(action_subscribers_node)
     executor.add_node(twist_subscribers_node)
+    executor.add_node(platform_subscribers_node)
+    executor.add_node(gripper_subscribers_node)
+    executor.add_node(arm_subscribers_node)
 
     spin_thread = threading.Thread(target=spin_node_in_thread, args=(executor,))
     spin_thread.start()

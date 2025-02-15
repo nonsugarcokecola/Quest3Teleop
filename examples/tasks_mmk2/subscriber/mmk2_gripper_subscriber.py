@@ -5,12 +5,19 @@ import numpy as np
 from rclpy.node import Node
 
 from std_msgs.msg import Float32
+from geometry_msgs.msg import Pose
+from scipy.spatial.transform import Rotation
 
 from discoverse.envs.mmk2_base import MMK2Cfg
 from discoverse.examples.tasks_mmk2.pick_kiwi import SimNode
 from discoverse.task_base import MMK2TaskBase
 
+from discoverse.examples.tasks_mmk2.config.constants import TIGHTEN_THRESHOLD, RELEASE_THRESHOLD
+from discoverse.examples.tasks_mmk2.config.constants import TIGHTEN_WEIGHT, RELEASE_WEIGHT
 from discoverse.examples.tasks_mmk2.config.constants import UP_WEIGHT, DOWN_WEIGHT
+from discoverse.examples.tasks_mmk2.config.constants import ARM_SCALE
+from discoverse.examples.tasks_mmk2.config.constants import LINEAR_THRESHOLD, ANGULAR_THRESHOLD
+from discoverse.examples.tasks_mmk2.config.constants import LINEAR_VELOCITY, ANGULAR_VELOCITY
 
 class SimNode(MMK2TaskBase):
     def domain_randomization(self):
@@ -36,7 +43,7 @@ class SimNode(MMK2TaskBase):
         return 1
 
 
-class MMK2PlatformSubscriber(Node):
+class MMK2GripperSubscriber(Node):
     def __init__(self, sim_node):
         super().__init__('action_subscriber')
 
@@ -45,42 +52,51 @@ class MMK2PlatformSubscriber(Node):
         self.left_arm_pre = None
         self.right_arm_pre = None
         # 订阅话题
-        self.mmk2_platform_topic = "mmk2_platform"
+        self.mmk2_topics = [
+            "mmk2_left_gripper_release", "mmk2_left_gripper_tighten",  #  Float32 类型
+            "mmk2_right_gripper_release", "mmk2_right_gripper_tighten", #  Float32 类型
+        ]
+
         # 存储订阅对象
         self.mmk2_subscriptions = {}
 
-        msg_type = Float32
-        self.mmk2_subscriptions[self.mmk2_platform_topic] = self.create_subscription(
-            msg_type, self.mmk2_platform_topic, lambda msg, t=self.mmk2_platform_topic: self.update_simulation(msg, t), 10
-        )
+        for topic_name in self.mmk2_topics:
+            msg_type = Float32
+            if msg_type:
+                self.mmk2_subscriptions[topic_name] = self.create_subscription(
+                    msg_type, topic_name, lambda msg, t=topic_name: self.update_simulation(msg, t), 10
+                )
 
         self.get_logger().info("SimNodeUpdater initialized, waiting for the publishers to come online...")
 
+    def update_gripper(self, gripper, weight):
+        new_value = gripper + weight
+        if new_value > 1 or new_value < 0:
+            self.get_logger().error(f"达到了夹抓位置的边界: {new_value}. 它需要在0～1之间.")
+            return gripper
+        return new_value
+
     def update_simulation(self, msg, topic_name):
         try:
-            if "platform" in topic_name:
+            if "gripper" in topic_name:
                 weight = None
-                if msg.data > 0:
-                    weight = UP_WEIGHT
-                elif msg.data < 0:
-                    weight = DOWN_WEIGHT
+                if "release" in topic_name and msg.data > RELEASE_THRESHOLD:
+                    weight = RELEASE_WEIGHT
+                elif "tighten" in topic_name and msg.data > TIGHTEN_THRESHOLD:
+                    weight = TIGHTEN_WEIGHT
                 if weight is not None:
-                    self.sim_node.tctr_slide[0] = self.sim_node.tctr_slide[0] + weight
-                    if self.sim_node.tctr_slide[0] > 1:
-                        self.sim_node.tctr_slide[0] = 1
-                        self.get_logger().warn(
-                            f"[{topic_name}] tctr_slide[0] exceeded upper threshold: {self.sim_node.tctr_slide[0]}")
-                    elif self.sim_node.tctr_slide[0] < 0:
-                        self.sim_node.tctr_slide[0] = 0
-                        self.get_logger().warn(
-                            f"[{topic_name}] tctr_slide[0] exceeded lower threshold: {self.sim_node.tctr_slide[0]}")
-
-                    self.get_logger().info(f"[{topic_name}] 更新 sim_node: 平台位置 x {self.sim_node.tctr_slide[0]}")
+                    if "left" in topic_name:
+                        self.sim_node.tctr_lft_gripper[:] = self.update_gripper(self.sim_node.tctr_lft_gripper[:], weight)
+                        self.get_logger().info(f"[{topic_name}] 更新 sim_node: 平台位置 x {msg.data}")
+                    if "right" in topic_name:
+                        self.sim_node.tctr_rgt_gripper[:] = self.update_gripper(self.sim_node.tctr_rgt_gripper[:], weight)
+                        self.get_logger().info(f"[{topic_name}] 更新 sim_node: 平台位置 x {msg.data}")
             else:
                 self.get_logger().warn(f"[{topic_name}] Unknown topic: {topic_name}")
         except Exception as e:
             self.get_logger().error(f"[{topic_name}] Exception: {e}")
             traceback.print_exc()  # 打印堆栈跟踪
+
 
 
 def main(args=None):
@@ -107,7 +123,7 @@ def main(args=None):
     rclpy.init(args=args)
     sim_node = SimNode(cfg)
 
-    node = MMK2PlatformSubscriber(sim_node)
+    node = MMK2Subscriber(sim_node)
     rclpy.spin(node)
     node.destroy_node()
     rclpy.shutdown()
