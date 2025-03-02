@@ -1,6 +1,5 @@
 import mujoco
 import numpy as np
-from scipy.spatial.transform import Rotation
 
 import os
 import shutil
@@ -15,7 +14,6 @@ from discoverse.task_base import MMK2TaskBase, recoder_mmk2
 from discoverse.utils import get_body_tmat, step_func, SimpleStateMachine
 
 from publisher.image_publisher import MultiCameraPublisher
-from subscriber.mmk2_subscriber import MMK2Subscriber
 from subscriber.mmk2_twist_subscriber import SimTwistSubscriber
 from subscriber.mmk2_gripper_subscriber import SimGripperSubscriber
 from subscriber.mmk2_arm_subscriber import SIMARMSubscriber
@@ -88,10 +86,10 @@ class SimNode(MMK2TaskBase):
         # wood_y_bios = (np.random.random() - 1) * 0.05
         # wood_y_bios = (np.random.random() - 1) * 0.1
 
-        wood_x_bios = 0
-        wood_y_bios = 0
-        self.tmp_wood_x = self.mj_data.qpos[self.njq + 7 * 1 + 0] + wood_x_bios
-        self.tmp_wood_y = self.mj_data.qpos[self.njq + 7 * 1 + 1] + wood_y_bios
+        wood_x_bias = 0
+        wood_y_bias = 0
+        self.tmp_wood_x = self.mj_data.qpos[self.njq + 7 * 1 + 0] + wood_x_bias
+        self.tmp_wood_y = self.mj_data.qpos[self.njq + 7 * 1 + 1] + wood_y_bias
         self.tmp_wood_z = self.mj_data.qpos[self.njq + 7 * 1 + 2] + 0.01
         # print("wood", self.tmp_wood_x, self.tmp_wood_y, self.tmp_wood_z)
 
@@ -101,10 +99,10 @@ class SimNode(MMK2TaskBase):
         # kiwi_y_bios = (np.random.random()) * 0.12
         # kiwi_y_bios = (np.random.random()) * 0.12
 
-        kiwi_x_bios = 0
-        kiwi_y_bios = 0
-        self.tmp_kiwi_x = self.mj_data.qpos[self.njq + 7 * 2 + 0] + kiwi_x_bios
-        self.tmp_kiwi_y = self.mj_data.qpos[self.njq + 7 * 2 + 1] + kiwi_y_bios
+        kiwi_x_bias = 0
+        kiwi_y_bias = 0
+        self.tmp_kiwi_x = self.mj_data.qpos[self.njq + 7 * 2 + 0] + kiwi_x_bias
+        self.tmp_kiwi_y = self.mj_data.qpos[self.njq + 7 * 2 + 1] + kiwi_y_bias
         # print("kiwi", self.tmp_kiwi_x, self.tmp_kiwi_y)
 
         # 随机 碗位置
@@ -113,10 +111,10 @@ class SimNode(MMK2TaskBase):
         # bowl_y_bios = (np.random.random()) * 0.04
         # bowl_y_bios = (np.random.random()) * 0.1
 
-        bowl_x_bios = 0
-        bowl_y_bios = 0
-        self.tmp_bowl_x = self.mj_data.qpos[self.njq + 7 * 0 + 0] + bowl_x_bios
-        self.tmp_bowl_y = self.mj_data.qpos[self.njq + 7 * 0 + 1] + bowl_y_bios
+        bowl_x_bias = 0
+        bowl_y_bias = 0
+        self.tmp_bowl_x = self.mj_data.qpos[self.njq + 7 * 0 + 0] + bowl_x_bias
+        self.tmp_bowl_y = self.mj_data.qpos[self.njq + 7 * 0 + 1] + bowl_y_bias
 
     def is_legal(self):
         self.generate_data()
@@ -135,8 +133,8 @@ class SimNode(MMK2TaskBase):
         if self.mj_data.qpos[self.njq + 7 * 2 + 2] - self.mj_data.qpos[self.njq + 7 * 0 + 2] > 1e-2:
             return False
 
-        v1 = np.array([self.mj_data.qpos[self.njq + 7 * 2 + 0], self.mj_data.qpos[self.njq + 7 * 2 + 1]])
-        v2 = np.array([self.mj_data.qpos[self.njq + 7 * 0 + 0], self.mj_data.qpos[self.njq + 7 * 0 + 1]])
+        v1 = np.array([self.mj_data.qpos[self.njq + 7 * 2 + 0], self.mj_data.qpos[self.njq + 7 * 2 + 1], self.mj_data.qpos[self.njq + 7 * 2 + 2]])
+        v2 = np.array([self.mj_data.qpos[self.njq + 7 * 0 + 0], self.mj_data.qpos[self.njq + 7 * 0 + 1], self.mj_data.qpos[self.njq + 7 * 0 + 2]])
 
         diff = v1 - v2
 
@@ -173,7 +171,6 @@ if __name__ == '__main__':
 
     rclpy.init()
     cam_publishers_node = MultiCameraPublisher()
-    # action_subscribers_node = MMK2Subscriber(sim_node=sim_node)
     twist_subscribers_node = SimTwistSubscriber(sim_node=sim_node)
     platform_subscribers_node = SimPlatformSubscriber(sim_node=sim_node)
     gripper_subscribers_node = SimGripperSubscriber(sim_node=sim_node)
@@ -193,7 +190,6 @@ if __name__ == '__main__':
     obs = sim_node.reset()
     for cam, idx in cams_info:
         cam_publishers_node.update_image(cam, obs["img"][idx])
-
     action = np.zeros_like(sim_node.target_control)
     while sim_node.running:
         if sim_node.reset_sig:
@@ -203,101 +199,6 @@ if __name__ == '__main__':
             action[:] = sim_node.target_control[:]
             act_lst, obs_lst = [], []
         try:
-            # if stm.trigger():
-            #     if stm.state_idx == 0:  # 降高度
-            #         sim_node.tctr_head[1] = 0.8
-            #         sim_node.tctr_slide[0] = 0.2
-            #     elif stm.state_idx == 1:  # 伸到碗前
-            #         tmat_bowl = get_body_tmat(sim_node.mj_data, "bowl_yellow")
-            #         target_posi = tmat_bowl[:3, 3] + 0.1 * tmat_bowl[:3, 1] + 0.1 * tmat_bowl[:3, 2]
-            #         tmp = sim_node.lft_arm_target_pose[:].copy()
-            #         sim_node.lft_arm_target_pose[:] = sim_node.get_tmat_wrt_mmk2base(target_posi)
-            #         print("before transform:\t", tmp, "\t lft arm target pose:\t", sim_node.lft_arm_target_pose, "change:\t", sim_node.lft_arm_target_pose - tmp)
-            #         sim_node.setArmEndTarget(sim_node.lft_arm_target_pose, sim_node.arm_action, "l",
-            #                                  sim_node.sensor_lft_arm_qpos,
-            #                                  Rotation.from_euler('zyx', [0., -0.0551, 0.]).as_matrix())
-            #         sim_node.tctr_lft_gripper[:] = 1
-            #     elif stm.state_idx == 2:  # 伸到碗壁
-            #         tmat_bowl = get_body_tmat(sim_node.mj_data, "bowl_yellow")
-            #         target_posi = tmat_bowl[:3, 3] + 0.046 * tmat_bowl[:3, 1] + 0.05 * tmat_bowl[:3, 2]
-            #         tmp = sim_node.lft_arm_target_pose[:].copy()
-            #         sim_node.lft_arm_target_pose[:] = sim_node.get_tmat_wrt_mmk2base(target_posi)
-            #         print("before transform:\t", tmp, "\t lft arm target pose:\t", sim_node.lft_arm_target_pose, "change:\t", sim_node.lft_arm_target_pose - tmp)
-            #         sim_node.setArmEndTarget(sim_node.lft_arm_target_pose, sim_node.arm_action, "l",
-            #                                  sim_node.sensor_lft_arm_qpos,
-            #                                  Rotation.from_euler('zyx', [0., -0.0551, 0.]).as_matrix())
-            #     elif stm.state_idx == 3:  # 抓住碗壁
-            #         sim_node.tctr_lft_gripper[:] = 0.0
-            #     elif stm.state_idx == 4:  # 提起来碗
-            #         sim_node.tctr_slide[0] = 0.0
-            #     elif stm.state_idx == 5:  # 把碗放到托盘上空
-            #         tmat_plate = get_body_tmat(sim_node.mj_data, "wood")
-            #         target_posi = tmat_plate[:3, 3] + np.array([0.0, 0.045, 0.25])
-            #         tmp = sim_node.lft_arm_target_pose[:].copy()
-            #         sim_node.lft_arm_target_pose[:] = sim_node.get_tmat_wrt_mmk2base(target_posi)
-            #         print("before transform:\t", tmp, "\t lft arm target pose:\t", sim_node.lft_arm_target_pose, "change:\t", sim_node.lft_arm_target_pose - tmp)
-            #         sim_node.setArmEndTarget(sim_node.lft_arm_target_pose, sim_node.arm_action, "l",
-            #                                  sim_node.sensor_lft_arm_qpos,
-            #                                  Rotation.from_euler('zyx', [0., -0.0551, 0.]).as_matrix())
-            #     elif stm.state_idx == 6:  # 下降高度
-            #         sim_node.tctr_slide[0] = 0.18
-            #     elif stm.state_idx == 7:  # 松开碗壁 放下碗
-            #         sim_node.tctr_lft_gripper[:] = 1
-            #     elif stm.state_idx == 8:  # 上升高度
-            #         sim_node.tctr_slide[0] = 0.1
-            #     elif stm.state_idx == 9:  # 移开手臂
-            #         tmat_plate = get_body_tmat(sim_node.mj_data, "wood")
-            #         target_posi = tmat_plate[:3, 3] + np.array([0.2, 0.03, 0.25])
-            #         tmp = sim_node.lft_arm_target_pose[:].copy()
-            #         sim_node.lft_arm_target_pose[:] = sim_node.get_tmat_wrt_mmk2base(target_posi)
-            #         print("before transform:\t", tmp, "\t lft arm target pose:\t", sim_node.lft_arm_target_pose, "change:\t", sim_node.lft_arm_target_pose - tmp)
-            #         sim_node.setArmEndTarget(sim_node.lft_arm_target_pose, sim_node.arm_action, "l",
-            #                                  sim_node.sensor_lft_arm_qpos,
-            #                                  Rotation.from_euler('zyx', [0., -0.0551, 0.]).as_matrix())
-            #     elif stm.state_idx == 10:  # 伸到猕猴桃上
-            #         tmat_kiwi = get_body_tmat(sim_node.mj_data, "kiwi")
-            #         target_posi = tmat_kiwi[:3, 3] + 0.1 * tmat_kiwi[:3, 1] + 0.1 * tmat_kiwi[:3, 2]
-            #         tmp = sim_node.rgt_arm_target_pose[:].copy()
-            #         sim_node.rgt_arm_target_pose[:] = sim_node.get_tmat_wrt_mmk2base(target_posi)
-            #         print("before transform:\t", tmp, "\t rgt arm target pose:\t", sim_node.rgt_arm_target_pose, "change:\t", sim_node.rgt_arm_target_pose - tmp)
-            #         sim_node.setArmEndTarget(sim_node.rgt_arm_target_pose, sim_node.arm_action, "r",
-            #                                  sim_node.sensor_rgt_arm_qpos,
-            #                                  Rotation.from_euler('zyx', [0., -0.0551, 0.]).as_matrix())
-            #         sim_node.tctr_rgt_gripper[:] = 1
-            #     elif stm.state_idx == 11:  # 伸到猕猴桃前
-            #         tmat_kiwi = get_body_tmat(sim_node.mj_data, "kiwi")
-            #         target_posi = tmat_kiwi[:3, 3] + 0.045 * tmat_kiwi[:3, 0] + 0.132 * tmat_kiwi[:3, 2]
-            #         tmp = sim_node.rgt_arm_target_pose[:].copy()
-            #         sim_node.rgt_arm_target_pose[:] = sim_node.get_tmat_wrt_mmk2base(target_posi)
-            #         print("before transform:\t", tmp, "\t rgt arm target pose:\t", sim_node.rgt_arm_target_pose, "change:\t", sim_node.rgt_arm_target_pose - tmp)
-            #         sim_node.setArmEndTarget(sim_node.rgt_arm_target_pose, sim_node.arm_action, "r",
-            #                                  sim_node.sensor_rgt_arm_qpos,
-            #                                  Rotation.from_euler('zyx', [0., -0.0551, 0.]).as_matrix())
-            #         sim_node.tctr_rgt_gripper[:] = 1
-            #     elif stm.state_idx == 12:  # 降高度
-            #         sim_node.tctr_head[1] = 0.8
-            #         sim_node.tctr_slide[0] = 0.2
-            #     elif stm.state_idx == 13:  # 抓住猕猴桃
-            #         sim_node.tctr_rgt_gripper[:] = 0.5
-            #     elif stm.state_idx == 14:  # 提起猕猴桃
-            #         sim_node.tctr_slide[0] = 0.0
-            #     elif stm.state_idx == 15:  # 移动到碗上空
-            #         tmat_bowl = get_body_tmat(sim_node.mj_data, "bowl_yellow")
-            #         target_posi = tmat_bowl[:3, 3] + 0.2 * tmat_bowl[:3, 2] + 0.015 * tmat_bowl[:3, 0]
-            #         tmp = sim_node.rgt_arm_target_pose[:].copy()
-            #         sim_node.rgt_arm_target_pose[:] = sim_node.get_tmat_wrt_mmk2base(target_posi)
-            #         print("before transform:\t", tmp, "\t rgt arm target pose:\t", sim_node.rgt_arm_target_pose, "change:\t", sim_node.rgt_arm_target_pose - tmp)
-            #         sim_node.setArmEndTarget(sim_node.rgt_arm_target_pose, sim_node.arm_action, "r",
-            #                                  sim_node.sensor_rgt_arm_qpos,
-            #                                  Rotation.from_euler('zyx', [0., -0.0551, 0.]).as_matrix())
-            #     elif stm.state_idx == 16:  # 降高度
-            #         sim_node.tctr_head[1] = 0.8
-            #         sim_node.tctr_slide[0] = 0.12
-            #     elif stm.state_idx == 17:  # 放开猕猴桃
-            #         sim_node.tctr_rgt_gripper[:] = 1.0
-            #     elif stm.state_idx == 18:  # 升高度
-            #         sim_node.tctr_head[1] = 0.8
-            #         sim_node.tctr_slide[0] = 0.05
             dif = np.abs(action - sim_node.target_control)
             sim_node.joint_move_ratio = dif / (np.max(dif) + 1e-6)
             sim_node.joint_move_ratio[2] *= 0.25
@@ -329,20 +230,21 @@ if __name__ == '__main__':
         for cam, idx in cams_info:
             cam_publishers_node.update_image(cam, obs["img"][idx])
 
-        if len(obs_lst) < sim_node.mj_data.time * cfg.render_set["fps"]:
-            act_lst.append(action.tolist().copy())
-            obs_lst.append(obs)
+        # if len(obs_lst) < sim_node.mj_data.time * cfg.render_set["fps"]:
+        #     act_lst.append(action.tolist().copy())
+        #     obs_lst.append(obs)
 
         # if stm.state_idx >= stm.max_state_cnt:
         if sim_node.check_success():
             sr = 1.0
-            break
-            # else:
-                # print(f"MMK2 Kiwi Failed")
-
+            print(" *******************************  Task Success ******************************* ")
+            # break
             # obs = sim_node.reset()
     print("Task Finished. Success rate = ", sr)
     cam_publishers_node.destroy_node()
-    # action_subscribers_node.destroy_node()
+    twist_subscribers_node.destroy_node()
+    platform_subscribers_node.destroy_node()
+    gripper_subscribers_node.destroy_node()
+    arm_subscribers_node.destroy_node()
     spin_thread.join()
     rclpy.shutdown()

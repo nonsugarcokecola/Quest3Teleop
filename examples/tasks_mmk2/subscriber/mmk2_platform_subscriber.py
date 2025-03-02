@@ -1,3 +1,6 @@
+import threading
+import concurrent.futures
+
 import rclpy
 import traceback
 
@@ -11,7 +14,7 @@ from discoverse.examples.tasks_mmk2.pick_kiwi import SimNode
 from discoverse.task_base import MMK2TaskBase
 
 from mmk2_types.types import MMK2Components
-from discoverse.examples.tasks_mmk2.utils.utils import control_traj_servo_separate
+from discoverse.examples.tasks_mmk2.utils.utils import control_spine_servo_separate
 
 from discoverse.examples.tasks_mmk2.config.constants import UP_WEIGHT, DOWN_WEIGHT
 from mmk2_types.grpc_msgs import (
@@ -60,31 +63,27 @@ class SimPlatformSubscriber(Node):
 
     def update_simulation(self, msg, topic_name):
         try:
-            if "platform" in topic_name:
-                weight = None
-                if msg.data > 0:
-                    weight = UP_WEIGHT
-                elif msg.data < 0:
-                    weight = DOWN_WEIGHT
-                if weight is not None:
-                    new_height = self.sim_node.tctr_slide[0] + weight
-                    if new_height > 1:
-                        new_height = 1
-                        self.get_logger().warn(
-                            f"[{topic_name}] tctr_slide[0] exceeded upper threshold: {new_height}")
-                    elif new_height < 0:
-                        new_height = 0
-                        self.get_logger().warn(
-                            f"[{topic_name}] tctr_slide[0] exceeded lower threshold: {new_height}")
-                    self.sim_node.tctr_slide[0] = new_height
+            weight = None
+            if msg.data > 0:
+                weight = UP_WEIGHT
+            elif msg.data < 0:
+                weight = DOWN_WEIGHT
+            if weight is not None:
+                new_height = self.sim_node.tctr_slide[0] + weight
+                if new_height > 1:
+                    new_height = 1
+                    self.get_logger().warn(
+                        f"[{topic_name}] tctr_slide[0] exceeded upper threshold: {new_height}")
+                elif new_height < 0:
+                    new_height = 0
+                    self.get_logger().warn(
+                        f"[{topic_name}] tctr_slide[0] exceeded lower threshold: {new_height}")
+                self.sim_node.tctr_slide[0] = new_height
 
-                    self.get_logger().info(f"[{topic_name}] 更新 sim_node: 平台位置 x {self.sim_node.tctr_slide[0]}")
-            else:
-                self.get_logger().warn(f"[{topic_name}] Unknown topic: {topic_name}")
+                self.get_logger().info(f"[{topic_name}] 更新 sim_node: 平台位置 x {self.sim_node.tctr_slide[0]}")
         except Exception as e:
             self.get_logger().error(f"[{topic_name}] Exception: {e}")
             traceback.print_exc()  # 打印堆栈跟踪
-
 class MMK2PlatformSubscriber(Node):
     def __init__(self, mmk2, trgt_joint_action):
         super().__init__('mmk2_platform_subscriber')
@@ -94,41 +93,39 @@ class MMK2PlatformSubscriber(Node):
         # 订阅话题
         self.mmk2_platform_topic = "mmk2_platform"
         # 存储订阅对象
-        self.mmk2_subscriptions = {}
-
-        msg_type = Float32
-        self.mmk2_subscriptions[self.mmk2_platform_topic] = self.create_subscription(
-            msg_type, self.mmk2_platform_topic, lambda msg, t=self.mmk2_platform_topic: self.update_simulation(msg, t), 10
+        self.platform_subscriptions = self.create_subscription(
+            Float32,
+            self.mmk2_platform_topic,
+            self.update_simulation,
+            10
         )
 
-        self.get_logger().info("MMK2 Updater initialized, waiting for the publishers to come online...")
+        self.get_logger().info("MMK2 Platform已完成初始化，等待指令")
 
-    def update_simulation(self, msg, topic_name):
+    def update_simulation(self, msg):
         try:
-            print(f"Receiving MSG from topic: {topic_name}")
-            if "platform" in topic_name:
-                weight = None
-                if msg.data > 0:
-                    weight = UP_WEIGHT
-                elif msg.data < 0:
-                    weight = DOWN_WEIGHT
-                if weight is not None:
-                    new_height = self.trgt_joint_action[MMK2Components.SPINE].position[0]  + weight
-                    if new_height > 1:
-                        new_height = 1
-                        self.get_logger().warn(
-                            f"[{topic_name}] tctr_slide[0] exceeded upper threshold: {new_height}")
-                    elif new_height < 0:
-                        new_height = 0
-                        self.get_logger().warn(
-                            f"[{topic_name}] tctr_slide[0] exceeded lower threshold: {new_height}")
-                    self.trgt_joint_action[MMK2Components.SPINE] = JointState(position=[new_height])
-                    control_traj_servo_separate(self.mmk2, self.trgt_joint_action)
-                    self.get_logger().info(f"[{topic_name}] 更新 sim_node: 平台位置 x {self.trgt_joint_action[MMK2Components.SPINE]}")
-            else:
-                self.get_logger().warn(f"[{topic_name}] Unknown topic: {topic_name}")
+            weight = None
+            if msg.data > 0:
+                weight = UP_WEIGHT
+            elif msg.data < 0:
+                weight = DOWN_WEIGHT
+            if weight is not None:
+                new_height = self.trgt_joint_action[MMK2Components.SPINE].position[0]  + weight
+                if new_height > 1:
+                    new_height = 1
+                    self.get_logger().warn(
+                        f"设定的高度: {new_height}, 超过了MMK2的最高值")
+                elif new_height < 0:
+                    new_height = 0
+                    self.get_logger().warn(
+                        f"设定的高度{new_height}， 超过了MMK2的最低值")
+                self.trgt_joint_action[MMK2Components.SPINE] = JointState(position=[new_height])
+
+                control_spine_servo_separate(self.mmk2, self.trgt_joint_action)
+                self.get_logger().info(f"{self.mmk2_platform_topic} 尝试更新 MMk2: 至平台位置 x {self.trgt_joint_action[MMK2Components.SPINE]}")
+
         except Exception as e:
-            self.get_logger().error(f"[{topic_name}] Exception: {e}")
+            self.get_logger().error(f"Exception: {e}")
             traceback.print_exc()  # 打印堆栈跟踪
 
 

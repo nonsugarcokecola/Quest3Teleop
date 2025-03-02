@@ -45,7 +45,7 @@ class MultiCameraPublisher(Node):
             "right_cam": self.create_publisher(CompressedImage, '/right_cam/compressed', 10),
         }
 
-        self.timer = self.create_timer(0.01, self.publish_images)
+        self.timer = self.create_timer(1/30, self.publish_images)
 
     def publish_images(self):
         for cam, publisher in self.cam_publishers.items():
@@ -83,7 +83,7 @@ class MMK2CameraPublisher(Node):
             "mid_cam": self.create_publisher(CompressedImage, '/mid_cam/compressed', 10),
             "right_cam": self.create_publisher(CompressedImage, '/right_cam/compressed', 10),
         }
-        self.timer = self.create_timer(0.01, self.publish_images)
+        self.timer = self.create_timer(1/30, self.publish_images)
 
     def publish_images(self):
         for cam, publisher in self.cam_publishers.items():
@@ -105,8 +105,8 @@ class MMK2CameraPublisher(Node):
         if cam_id in self.images and np_array.shape == (480, 640, 3):
             self.images[cam_id] = np_array
         else:
-            self.get_logger().warn(f"Invalid camera ID or image shape for {cam_id}")
-
+            # self.get_logger().warn(f"Invalid camera ID or image shape for {cam_id}")
+            pass
 
 def main(args=None):
     rclpy.init(args=args)
